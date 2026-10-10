@@ -62,6 +62,59 @@ npm run web                   # terminal 2: React dev server
 In Development the API applies migrations and seeds demo data on startup. **Never commit real
 credentials.**
 
+### Run the API with Docker
+
+From the repository root, run `docker compose up --build` (add `-d` to detach). Compose starts
+SQL Server, waits for its health check, then builds and starts the API at
+`http://localhost:5080`. The API container listens on HTTP port 8080 as a non-root user; the
+image contains no HTTPS certificate. It receives its database connection string, JWT settings
+and ASP.NET environment at runtime from Compose/.env, not from the image. The development
+`appsettings.Development.json` is excluded from the published container. Application defaults
+such as the configurable SLA policy remain in `appsettings.json`. Copy `.env.example` to `.env`
+to customize local values.
+
+Compose uses the Development environment so that the API applies EF migrations and seeds demo
+data on an empty SQL volume. Check database reachability and readiness at
+`http://localhost:5080/health` (HTTP 200 means healthy; 503 means the database is unavailable;
+the JSON response includes the database check status).
+The tickets endpoint requires a token: log in at `/api/auth/login`, then send its access token
+as a Bearer token to `/api/tickets`.
+
+For local web development against the container, run `npm run web` in another terminal with
+`VITE_API_PROXY_TARGET=http://localhost:5080`. In PowerShell, use
+`$env:VITE_API_PROXY_TARGET = 'http://localhost:5080'; npm run web`.
+
+Automatic migrations are a local/development convenience. A real deployment should run a
+reviewed migration bundle or dedicated migration job once, before rolling out API instances.
+This avoids application instances racing to modify the schema, keeps schema-change permissions
+out of the runtime identity, and makes migration approval and failure handling explicit.
+
+Docker verification:
+
+```bash
+docker compose down -v                 # destructive: also deletes the local SQL data volume
+docker compose up --build -d
+curl --fail http://localhost:5080/health
+docker compose exec api whoami         # should not print root
+```
+
+After login, verify seeded ticket data at `/api/tickets` using the returned Bearer token. To
+verify the restore cache, change a `.cs` file, run `docker compose build --progress=plain api`,
+and confirm the restore layer is reported `CACHED` while the later source-copy/publish steps
+run again. Compare the final API and SDK image sizes with:
+
+```bash
+docker image inspect "$(docker compose images -q api)" --format '{{.Size}}'
+docker image inspect mcr.microsoft.com/dotnet/sdk:10.0 --format '{{.Size}}'
+```
+
+For the verified local build, Docker reported an API runtime image of **442.2 MiB** and a .NET
+SDK image of **1,243 MiB**; the SDK image is about **2.81× larger**. The clean-volume check
+returned a healthy database check, seeded 40 tickets, rejected an unauthenticated tickets call,
+and accepted it after login. `whoami` inside the API container returned `app`. The rebuild after
+changing `Program.cs` showed `dotnet restore` as `CACHED`. `MSSQL_PORT` can be changed in `.env`
+if local port 1433 is already occupied.
+
 **Visual Studio 2026:** run `npm run db:up`, open `SupportDesk.sln`, set
 **SupportDesk.Presentation** as the startup project, and press F5 on the **https** profile.
 
@@ -89,6 +142,7 @@ Both pass on a clean checkout and neither needs a database.
 | --- | --- |
 | `GET /api/tickets` | Paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `slaStatus`, `sortBy`, `sortDirection`. |
 | `GET /api/tickets/{id}` | One ticket |
+| `GET /health` | Database readiness; anonymous |
 | `POST /api/tickets` | Create a ticket |
 | `POST /api/tickets/{id}/escalate` · `GET /api/tickets/{id}/escalations` | Escalate and inspect immutable escalation history |
 | `PATCH /api/tickets/{id}/status` · `/assignment` | Change status / assignee |
@@ -97,7 +151,7 @@ Both pass on a clean checkout and neither needs a database.
 
 Errors are `ProblemDetails`: `400` validation, `404` not found, `409` conflict or business rule.
 All API controller endpoints require a bearer token except login. Swagger remains publicly accessible
-in Development.
+in Development; `GET /health` is also anonymous.
 
 **Seed data:** 5 categories, 6 customers (3 Premium), 6 agents (one inactive, one at their limit)
 and 40 tickets across every status, priority and SLA state.
