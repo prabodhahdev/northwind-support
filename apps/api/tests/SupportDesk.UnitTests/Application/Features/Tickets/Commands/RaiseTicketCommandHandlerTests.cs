@@ -6,6 +6,7 @@ using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Exceptions;
 using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
+using SupportDesk.Application.Features.Tickets.Triage;
 using SupportDesk.Domain.Aggregates.Agents;
 using SupportDesk.Domain.Aggregates.Categories;
 using SupportDesk.Domain.Aggregates.Customers;
@@ -70,32 +71,22 @@ public class RaiseTicketCommandHandlerTests
             .ReturnsAsync(count);
     }
 
-    private static SlaOptions DefaultSlaOptions() => new()
-    {
-        BaseWindowHours = new Dictionary<string, int>
-        {
-            ["Low"] = 72,
-            ["Medium"] = 24,
-            ["High"] = 8,
-            ["Critical"] = 4
-        },
-        PremiumCustomerMultiplier = 0.5,
-        MinimumWindowHours = 1,
-        AtRiskThresholdPercent = 25
-    };
-
     private static RaiseTicketCommandHandler CreateHandler(
         TicketCommandTestContext context,
         SlaOptions? options = null)
     {
+        var triage = new TicketTriageService(
+            context.Tickets.Object,
+            context.Agents.Object,
+            Options.Create(options ?? TicketCommandTestContext.DefaultSlaOptions()));
+
         return new RaiseTicketCommandHandler(
             context.Tickets.Object,
             context.Customers.Object,
             context.Categories.Object,
-            context.Agents.Object,
             context.UnitOfWork.Object,
             context.Clock,
-            Options.Create(options ?? DefaultSlaOptions()),
+            triage,
             new GetTicketQueryHandler(context.TicketQueries.Object),
             NullLogger<RaiseTicketCommandHandler>.Instance);
     }
@@ -412,7 +403,7 @@ public class RaiseTicketCommandHandlerTests
                 CustomerTier.Premium,
                 context.Clock.UtcNow));
 
-        var options = DefaultSlaOptions();
+        var options = TicketCommandTestContext.DefaultSlaOptions();
         options.PremiumCustomerMultiplier = 0.1;
 
         var handler = CreateHandler(context, options);

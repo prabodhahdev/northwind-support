@@ -172,7 +172,7 @@ public sealed class TicketQueries(
         };
 
     // Applies the requested filters before counting and paging.
-    private static IQueryable<TicketWithLabels> ApplyFilters(
+    private IQueryable<TicketWithLabels> ApplyFilters(
         IQueryable<TicketWithLabels> source,
         TicketQuery query)
     {
@@ -210,7 +210,72 @@ public sealed class TicketQueries(
                 x.Customer.Name.Contains(search));
         }
 
+        if (query.SlaStatus.HasValue)
+            source = ApplySlaStatusFilter(source, query.SlaStatus.Value);
+
         return source;
+    }
+
+    /// <summary>
+    /// Mirrors <see cref="SlaEvaluator"/> as a composable SQL predicate so filter,
+    /// count and paging stay in the database (BR-8).
+    /// </summary>
+    private IQueryable<TicketWithLabels> ApplySlaStatusFilter(
+        IQueryable<TicketWithLabels> source,
+        SlaStatus slaStatus)
+    {
+        var now = clock.UtcNow;
+        var threshold = _atRiskThresholdPercent;
+
+        return slaStatus switch
+        {
+            SlaStatus.NotApplicable => source.Where(
+                x => x.Ticket.DueAtUtc == null),
+
+            SlaStatus.Met => source.Where(x =>
+                x.Ticket.DueAtUtc != null &&
+                x.Ticket.ResolvedAtUtc != null &&
+                x.Ticket.ResolvedAtUtc <= x.Ticket.DueAtUtc),
+
+            SlaStatus.Breached => source.Where(x =>
+                x.Ticket.DueAtUtc != null &&
+                (
+                    (x.Ticket.ResolvedAtUtc != null &&
+                     x.Ticket.ResolvedAtUtc > x.Ticket.DueAtUtc) ||
+                    (x.Ticket.ResolvedAtUtc == null &&
+                     now > x.Ticket.DueAtUtc) ||
+                    (x.Ticket.ResolvedAtUtc == null &&
+                     now <= x.Ticket.DueAtUtc &&
+                     x.Ticket.SlaStartedAtUtc != null &&
+                     x.Ticket.DueAtUtc <= x.Ticket.SlaStartedAtUtc)
+                )),
+
+            SlaStatus.AtRisk => source.Where(x =>
+                x.Ticket.DueAtUtc != null &&
+                x.Ticket.ResolvedAtUtc == null &&
+                now <= x.Ticket.DueAtUtc &&
+                x.Ticket.SlaStartedAtUtc != null &&
+                x.Ticket.DueAtUtc > x.Ticket.SlaStartedAtUtc &&
+                (x.Ticket.DueAtUtc.Value.Ticks - now.Ticks) * 100
+                    <= threshold * (x.Ticket.DueAtUtc.Value.Ticks
+                        - x.Ticket.SlaStartedAtUtc.Value.Ticks)),
+
+            SlaStatus.WithinSla => source.Where(x =>
+                x.Ticket.DueAtUtc != null &&
+                x.Ticket.ResolvedAtUtc == null &&
+                now <= x.Ticket.DueAtUtc &&
+                (
+                    x.Ticket.SlaStartedAtUtc == null ||
+                    (
+                        x.Ticket.DueAtUtc > x.Ticket.SlaStartedAtUtc &&
+                        (x.Ticket.DueAtUtc.Value.Ticks - now.Ticks) * 100
+                            > threshold * (x.Ticket.DueAtUtc.Value.Ticks
+                                - x.Ticket.SlaStartedAtUtc.Value.Ticks)
+                    )
+                )),
+
+            _ => source
+        };
     }
 
     private static IQueryable<TicketWithLabels> ApplySort(

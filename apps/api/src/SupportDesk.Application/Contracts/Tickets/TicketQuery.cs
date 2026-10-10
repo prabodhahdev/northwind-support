@@ -4,11 +4,8 @@ namespace SupportDesk.Application.Contracts.Tickets;
 
 /// <summary>
 /// Filters, sorting and paging for the ticket list. Bound directly from the query string.
+/// All filters are applied in SQL before counting and paging.
 /// </summary>
-/// <remarks>
-/// The web app already sends every filter below, but the API only sorts and pages so far: the
-/// filters are part of the contract and still have to be applied server-side.
-/// </remarks>
 public sealed record TicketQuery
 {
     public const int MaxPageSize = 100;
@@ -31,6 +28,9 @@ public sealed record TicketQuery
     public int? AssignedAgentId { get; init; }
 
     public bool UnassignedOnly { get; init; }
+
+    /// <summary>Derived SLA status; filtered in SQL before counting and paging.</summary>
+    public SlaStatus? SlaStatus { get; init; }
 
     /// <summary>createdAtUtc | updatedAtUtc | dueAtUtc | priority | status.</summary>
     public string SortBy { get; init; } = "createdAtUtc";

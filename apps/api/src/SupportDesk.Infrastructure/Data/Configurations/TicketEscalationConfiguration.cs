@@ -48,6 +48,8 @@ public sealed class TicketEscalationConfiguration
             .HasColumnType("datetime2(3)")
             .IsRequired();
 
+        // Index on TicketId: history is always loaded by ticket
+        // (GET /api/tickets/{id}/escalations) and cascade-deleted with the parent.
         builder.HasIndex(e => e.TicketId);
 
         builder.HasOne<Ticket>()

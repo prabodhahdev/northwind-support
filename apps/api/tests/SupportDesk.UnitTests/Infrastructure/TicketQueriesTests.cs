@@ -130,6 +130,132 @@ public sealed class TicketQueriesTests
         Assert.Equal("TCK-0041", result.Items[0].Reference);
     }
 
+    [Fact]
+    public async Task GetPagedAsync_FiltersBySlaStatusBreached()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var db = database.Db;
+        var now = FixedClock.DefaultNow;
+
+        var customer = new Customer(
+            "Contoso Ltd", "contoso@example.com", null,
+            CustomerTier.Premium, now);
+        var category = new Category("General", false, false);
+
+        db.AddRange(customer, category);
+        await db.SaveChangesAsync();
+
+        var breached = Ticket.Raise(
+            "TCK-0041", "Past due", "Description",
+            customer.Id, category.Id, TicketPriority.High, now);
+        breached.SetSlaWindow(now.AddHours(-10), now.AddHours(-1));
+
+        var within = Ticket.Raise(
+            "TCK-0042", "Still fine", "Description",
+            customer.Id, category.Id, TicketPriority.High, now);
+        within.SetSlaWindow(now.AddHours(-1), now.AddHours(10));
+
+        var noSla = Ticket.Raise(
+            "TCK-0043", "No due date", "Description",
+            customer.Id, category.Id, TicketPriority.Low, now);
+
+        db.AddRange(breached, within, noSla);
+        await db.SaveChangesAsync();
+
+        var queries = CreateTicketQueries(db);
+
+        var result = await queries.GetPagedAsync(
+            new TicketQuery { SlaStatus = SlaStatus.Breached },
+            CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0041", result.Items[0].Reference);
+        Assert.Equal(SlaStatus.Breached, result.Items[0].SlaStatus);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_FiltersBySlaStatusAtRisk()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var db = database.Db;
+        var now = FixedClock.DefaultNow;
+
+        var customer = new Customer(
+            "Contoso Ltd", "contoso@example.com", null,
+            CustomerTier.Premium, now);
+        var category = new Category("General", false, false);
+
+        db.AddRange(customer, category);
+        await db.SaveChangesAsync();
+
+        // 8h window, 1h remaining → 12.5% left → AtRisk at 25% threshold
+        var atRisk = Ticket.Raise(
+            "TCK-0041", "Almost due", "Description",
+            customer.Id, category.Id, TicketPriority.High, now);
+        atRisk.SetSlaWindow(now.AddHours(-7), now.AddHours(1));
+
+        // 8h window, 4h remaining → 50% left → WithinSla
+        var within = Ticket.Raise(
+            "TCK-0042", "Comfortable", "Description",
+            customer.Id, category.Id, TicketPriority.High, now);
+        within.SetSlaWindow(now.AddHours(-4), now.AddHours(4));
+
+        db.AddRange(atRisk, within);
+        await db.SaveChangesAsync();
+
+        var queries = CreateTicketQueries(db);
+
+        var result = await queries.GetPagedAsync(
+            new TicketQuery { SlaStatus = SlaStatus.AtRisk },
+            CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0041", result.Items[0].Reference);
+        Assert.Equal(SlaStatus.AtRisk, result.Items[0].SlaStatus);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_CombinesSlaStatusWithPriorityFilter()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var db = database.Db;
+        var now = FixedClock.DefaultNow;
+
+        var customer = new Customer(
+            "Contoso Ltd", "contoso@example.com", null,
+            CustomerTier.Premium, now);
+        var category = new Category("General", false, false);
+
+        db.AddRange(customer, category);
+        await db.SaveChangesAsync();
+
+        var matching = Ticket.Raise(
+            "TCK-0041", "High breached", "Description",
+            customer.Id, category.Id, TicketPriority.High, now);
+        matching.SetSlaWindow(now.AddHours(-10), now.AddHours(-1));
+
+        var wrongPriority = Ticket.Raise(
+            "TCK-0042", "Low breached", "Description",
+            customer.Id, category.Id, TicketPriority.Low, now);
+        wrongPriority.SetSlaWindow(now.AddHours(-10), now.AddHours(-1));
+
+        db.AddRange(matching, wrongPriority);
+        await db.SaveChangesAsync();
+
+        var queries = CreateTicketQueries(db);
+
+        var result = await queries.GetPagedAsync(
+            new TicketQuery
+            {
+                Priority = TicketPriority.High,
+                SlaStatus = SlaStatus.Breached
+            },
+            CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0041", result.Items[0].Reference);
+    }
+
     // Uses the same at-risk threshold configured by the application.
     private static TicketQueries CreateTicketQueries(SupportDbContext db)
     {
