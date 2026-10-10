@@ -1,6 +1,8 @@
 
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using SupportDesk.Application.Abstractions;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Domain.Aggregates.Categories;
 using SupportDesk.Domain.Aggregates.Customers;
@@ -37,7 +39,7 @@ public sealed class TicketQueriesTests
 
         await db.SaveChangesAsync();
 
-        var queries = new TicketQueries(db, new FixedClock());
+        var queries = CreateTicketQueries(db);
 
         var result = await queries.GetPagedAsync(
             new TicketQuery { Priority = TicketPriority.High },
@@ -75,7 +77,7 @@ public sealed class TicketQueriesTests
 
         await db.SaveChangesAsync();
 
-        var queries = new TicketQueries(db, new FixedClock());
+        var queries = CreateTicketQueries(db);
 
         var result = await queries.GetPagedAsync(
             new TicketQuery
@@ -117,7 +119,7 @@ public sealed class TicketQueriesTests
 
         await db.SaveChangesAsync();
 
-        var queries = new TicketQueries(db, new FixedClock());
+        var queries = CreateTicketQueries(db);
 
         var result = await queries.GetPagedAsync(
             new TicketQuery { Search = "  Contoso  " },
@@ -126,6 +128,17 @@ public sealed class TicketQueriesTests
         Assert.Equal(1, result.TotalCount);
         Assert.Single(result.Items);
         Assert.Equal("TCK-0041", result.Items[0].Reference);
+    }
+
+    // Uses the same at-risk threshold configured by the application.
+    private static TicketQueries CreateTicketQueries(SupportDbContext db)
+    {
+        var slaOptions = Options.Create(new SlaOptions
+        {
+            AtRiskThresholdPercent = 25
+        });
+
+        return new TicketQueries(db, new FixedClock(), slaOptions);
     }
 
     private sealed class TestDatabase : IAsyncDisposable
