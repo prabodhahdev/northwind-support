@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 using SupportDesk.Application.Contracts.Common;
 using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Application.Features.Tickets.Commands.AssignTicket;
@@ -8,6 +9,7 @@ using SupportDesk.Application.Features.Tickets.Commands.RaiseTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicket;
 using SupportDesk.Application.Features.Tickets.Queries.GetTicketEscalations;
 using SupportDesk.Application.Features.Tickets.Queries.SearchTickets;
+using SupportDesk.Presentation.Contracts.Tickets;
 
 namespace SupportDesk.Presentation.Controllers;
 
@@ -51,12 +53,25 @@ public sealed class TicketsController : ControllerBase
 
     /// <summary>Escalates a ticket by one priority level and records history.</summary>
     [HttpPost("{id:int}/escalate")]
-    public Task<EscalateTicketResultDto> Escalate(
+    public async Task<ActionResult<EscalateTicketResultDto>> Escalate(
         int id,
-        EscalateTicketRequest request,
+        EscalateTicketBody body,
         [FromServices] EscalateTicketCommandHandler handler,
-        CancellationToken ct) =>
-        handler.HandleAsync(id, request, ct);
+        CancellationToken ct)
+    {
+        var escalatedBy = User.FindFirstValue(ClaimTypes.Name);
+
+        if (string.IsNullOrWhiteSpace(escalatedBy))
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await handler.HandleAsync(id, new EscalateTicketRequest
+        {
+            Reason = body.Reason,
+            EscalatedBy = escalatedBy
+        }, ct));
+    }
 
     /// <summary>Moves a ticket to another status.</summary>
     [HttpPatch("{id:int}/status")]

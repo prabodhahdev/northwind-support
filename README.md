@@ -87,13 +87,17 @@ Both pass on a clean checkout and neither needs a database.
 
 | Endpoint | Description |
 | --- | --- |
-| `GET /api/tickets` | Paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `sortBy`, `sortDirection`. **Filters are accepted but not applied yet** (Task 1). |
+| `GET /api/tickets` | Paged list with `search`, `status`, `priority`, `categoryId`, `customerId`, `assignedAgentId`, `unassignedOnly`, `slaStatus`, `sortBy`, `sortDirection`. |
 | `GET /api/tickets/{id}` | One ticket |
 | `POST /api/tickets` | Create a ticket |
+| `POST /api/tickets/{id}/escalate` · `GET /api/tickets/{id}/escalations` | Escalate and inspect immutable escalation history |
 | `PATCH /api/tickets/{id}/status` · `/assignment` | Change status / assignee |
 | `GET /api/customers` · `/api/agents` · `/api/categories` | Reference data |
+| `POST /api/auth/login` · `GET /api/auth/me` | Sign in and get the authenticated agent |
 
 Errors are `ProblemDetails`: `400` validation, `404` not found, `409` conflict or business rule.
+All API controller endpoints require a bearer token except login. Swagger remains publicly accessible
+in Development.
 
 **Seed data:** 5 categories, 6 customers (3 Premium), 6 agents (one inactive, one at their limit)
 and 40 tickets across every status, priority and SLA state.
@@ -138,3 +142,21 @@ Implemented server-side filtering for ticket searches.
   SQL counting and paging.
 - The web app displays the triage outcome, reusable SLA status indicator, escalation controls
   and escalation history.
+
+### Task 3 — Agent authentication (backend)
+
+- Agent credentials are stored as a nullable `PasswordHash` column on the existing `Agents`
+  table because each login identity belongs to exactly one agent; the credential migration is
+  `AddAgentPasswordHash`.
+- Passwords use ASP.NET Core Identity's salted `PasswordHasher<Agent>`. Development seeding
+  provisions every agent (including existing seeded databases that predate the column) with
+  the local-only password `LocalDev123!`. For example, sign in as
+  `alex.turner@northwind-support.example` / `LocalDev123!`. Inactive agents cannot sign in.
+- `POST /api/auth/login` returns a signed JWT, expiry and agent identity. Unknown email and wrong
+  password share the same 401 response. `GET /api/auth/me` returns identity claims.
+- JWT signing key is configured under `Jwt:SigningKey` (override with
+  `Jwt__SigningKey`); `.env.example` contains only an explicitly local development value.
+  Access tokens last 60 minutes by default. Supply a managed secret and rotate it outside
+  development.
+- Escalation requests accept only a reason; `escalatedBy` is populated from the authenticated
+  agent's token claims, not from client input.
