@@ -107,3 +107,9 @@ and 40 tickets across every status, priority and SLA state.
 | Browser warns about the certificate | `dotnet dev-certs https --trust`, or use the web app, which proxies |
 | Web app shows "Unable to load tickets" | The API is not running, or `VITE_API_PROXY_TARGET` points at the wrong port |
 | SQL Server slow on Apple Silicon | Enable Rosetta in Docker Desktop → Settings → General |
+
+## Task1 : DEFECT-117: Ticket Filter Requests
+
+**Root cause:** The ticket-list React effect depended on search and pagination fields but omitted the other filter fields. As a result, changing the status or another omitted filter did not trigger a new API request.
+
+**Fix:** Update the effect dependencies so filter changes trigger requests while preserving the debounce for search input.
