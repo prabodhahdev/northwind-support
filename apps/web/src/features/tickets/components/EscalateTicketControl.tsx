@@ -113,10 +113,6 @@ export function EscalateTicketControl({ ticket, onEscalated }: EscalateTicketCon
   );
 }
 
-export function validateEscalateForm(form: FormState): Record<string, string> {
-  return validate(form);
-}
-
 function validate(form: FormState): Record<string, string> {
   const errors: Record<string, string> = {};
   const reason = form.reason.trim();

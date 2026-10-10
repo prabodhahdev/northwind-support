@@ -8,7 +8,7 @@ import type {
   TicketStatus,
 } from '../../../types/api';
 import { humanize } from '../../../lib/format';
-import { slaStatusLabels, slaStatusOptions } from './SlaCell';
+import { slaStatusLabels, slaStatusOptions } from './slaStatus';
 
 const statuses: TicketStatus[] = ['New', 'Open', 'InProgress', 'Resolved', 'Closed'];
 const priorities: TicketPriority[] = ['Low', 'Medium', 'High', 'Critical'];
