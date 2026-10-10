@@ -51,6 +51,17 @@ public class SlaEvaluatorTests
                 Now.AddHours(-3), Now.AddHours(1), null, Now, AtRiskThresholdPercent));
 
     [Fact]
+    public void Evaluate_OpenAtDueTime_IsAtRisk()
+    {
+        var dueAt = Now.AddHours(4);
+
+        Assert.Equal(
+            SlaStatus.AtRisk,
+            SlaEvaluator.Evaluate(
+                Now, dueAt, null, dueAt, AtRiskThresholdPercent));
+    }
+
+    [Fact]
     public void Evaluate_OpenWithMoreThan25PercentRemaining_IsWithinSla() =>
         Assert.Equal(
             SlaStatus.WithinSla,

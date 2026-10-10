@@ -127,3 +127,14 @@ Implemented server-side filtering for ticket searches.
 
 **Regression tests:** Added tests for exact-match priority filtering, combined filters, and customer-name search.
 
+### Task 2 — Ticket escalation and assignment
+
+- Ticket creation applies configured priority, SLA-window and agent-assignment rules and returns
+  the triage reasons. Escalation recomputes the due date, re-evaluates ownership and records an
+  immutable before/after history row.
+- `TicketEscalations.TicketId` has an index because ticket history is queried by ticket ID; the
+  foreign key cascades when its parent ticket is deleted.
+- SLA status is derived from the ticket dates. The list filter applies the selected state before
+  SQL counting and paging.
+- The web app displays the triage outcome, reusable SLA status indicator, escalation controls
+  and escalation history.
