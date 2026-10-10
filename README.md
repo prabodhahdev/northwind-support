@@ -143,7 +143,7 @@ Implemented server-side filtering for ticket searches.
 - The web app displays the triage outcome, reusable SLA status indicator, escalation controls
   and escalation history.
 
-### Task 3 — Agent authentication (backend)
+### Task 3 — Agent authentication
 
 - Agent credentials are stored as a nullable `PasswordHash` column on the existing `Agents`
   table because each login identity belongs to exactly one agent; the credential migration is
@@ -160,3 +160,13 @@ Implemented server-side filtering for ticket searches.
   development.
 - Escalation requests accept only a reason; `escalatedBy` is populated from the authenticated
   agent's token claims, not from client input.
+- The web client provides `/login`, protects application routes, restores the intended route
+  after sign-in, displays the signed-in agent and clears the session on logout or any API 401.
+- The browser keeps the access token, expiry and agent display data in `localStorage` under
+  `northwind-support-session`, and sends the token as a Bearer credential on API requests.
+  This survives reloads but is readable by JavaScript, so an XSS flaw could expose the token.
+  Keep the app free of untrusted scripts and use HTTPS outside local development.
+
+**Known limitations:** There are no refresh tokens or automatic token renewal, roles or
+permissions, account lockout, or rate limiting. Agents sign in again after the 60-minute token
+expires; any API 401 clears the local session and sends them to sign in again.

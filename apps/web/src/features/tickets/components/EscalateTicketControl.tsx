@@ -12,17 +12,16 @@ interface EscalateTicketControlProps {
 
 interface FormState {
   reason: string;
-  escalatedBy: string;
 }
 
 const emptyForm: FormState = {
   reason: '',
-  escalatedBy: '',
 };
 
 /**
  * Escalates a ticket by one priority level. Client validation matches the API
- * (reason 5–500, actor required) so invalid input never leaves the browser.
+ * (reason 5–500) so invalid input never leaves the browser. The server identifies
+ * the actor from the authenticated session.
  */
 export function EscalateTicketControl({ ticket, onEscalated }: EscalateTicketControlProps) {
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -50,7 +49,6 @@ export function EscalateTicketControl({ ticket, onEscalated }: EscalateTicketCon
     try {
       const result = await ticketsApi.escalate(ticket.id, {
         reason: form.reason.trim(),
-        escalatedBy: form.escalatedBy.trim(),
       });
 
       setForm(emptyForm);
@@ -100,24 +98,6 @@ export function EscalateTicketControl({ ticket, onEscalated }: EscalateTicketCon
         )}
       </Field>
 
-      <Field
-        id="escalate-by"
-        label="Escalated by"
-        error={errors.escalatedBy}
-        hint="Your name or email until sign-in is available."
-      >
-        {(fieldProps) => (
-          <input
-            {...fieldProps}
-            type="text"
-            value={form.escalatedBy}
-            maxLength={100}
-            disabled={isSaving}
-            onChange={(event) => update({ escalatedBy: event.target.value })}
-          />
-        )}
-      </Field>
-
       {submitError && (
         <p className="field__error" role="alert">
           {submitError}
@@ -140,18 +120,11 @@ export function validateEscalateForm(form: FormState): Record<string, string> {
 function validate(form: FormState): Record<string, string> {
   const errors: Record<string, string> = {};
   const reason = form.reason.trim();
-  const escalatedBy = form.escalatedBy.trim();
 
   if (reason.length < 5) {
     errors.reason = 'Give a reason of at least 5 characters.';
   } else if (reason.length > 500) {
     errors.reason = 'Keep the reason to 500 characters or fewer.';
-  }
-
-  if (escalatedBy.length === 0) {
-    errors.escalatedBy = 'Say who is escalating the ticket.';
-  } else if (escalatedBy.length > 100) {
-    errors.escalatedBy = 'Keep the escalated-by value to 100 characters or fewer.';
   }
 
   return errors;

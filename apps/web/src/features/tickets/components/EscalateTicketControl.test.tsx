@@ -46,7 +46,7 @@ const escalation: TicketEscalation = {
   fromDueAtUtc: '2026-09-26T16:12:00Z',
   toDueAtUtc: '2026-09-25T14:12:00Z',
   reason: 'Customer is blocked.',
-  escalatedBy: 'lead@example.com',
+  escalatedBy: 'Priya Nair',
   escalatedAtUtc: '2026-09-25T10:30:00Z',
 };
 
@@ -66,9 +66,6 @@ describe('EscalateTicketControl', () => {
     render(<EscalateTicketControl ticket={ticket} onEscalated={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'nope' } });
-    fireEvent.change(screen.getByLabelText(/Escalated by/), {
-      target: { value: 'lead@example.com' },
-    });
     fireEvent.click(screen.getByRole('button', { name: 'Escalate ticket' }));
 
     expect(await screen.findByText('Give a reason of at least 5 characters.')).toBeInTheDocument();
@@ -82,9 +79,6 @@ describe('EscalateTicketControl', () => {
 
     fireEvent.change(screen.getByLabelText('Reason'), {
       target: { value: 'Customer is blocked.' },
-    });
-    fireEvent.change(screen.getByLabelText(/Escalated by/), {
-      target: { value: 'lead@example.com' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Escalate ticket' }));
 
@@ -109,9 +103,6 @@ describe('EscalateTicketControl', () => {
 
     fireEvent.change(screen.getByLabelText('Reason'), {
       target: { value: 'Customer is blocked.' },
-    });
-    fireEvent.change(screen.getByLabelText(/Escalated by/), {
-      target: { value: 'lead@example.com' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Escalate ticket' }));
 
