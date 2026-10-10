@@ -2,21 +2,31 @@ import { Badge, type BadgeTone } from '../../../components/Badge';
 import { formatDateTime } from '../../../lib/format';
 import type { SlaStatus } from '../../../types/api';
 
-const labels: Partial<Record<SlaStatus, { text: string; tone: BadgeTone }>> = {
-  Met: { text: 'Met', tone: 'success' },
-  Breached: { text: 'Breached', tone: 'danger' },
+/** Display labels for every SLA state — text, not colour alone, conveys meaning. */
+export const slaStatusLabels: Record<SlaStatus, { text: string; tone: BadgeTone }> = {
   WithinSla: { text: 'Within SLA', tone: 'info' },
+  AtRisk: { text: 'At risk', tone: 'warning' },
+  Breached: { text: 'Breached', tone: 'danger' },
+  Met: { text: 'Met', tone: 'success' },
   NotApplicable: { text: 'No SLA', tone: 'neutral' },
 };
+
+export const slaStatusOptions: SlaStatus[] = [
+  'WithinSla',
+  'AtRisk',
+  'Breached',
+  'Met',
+  'NotApplicable',
+];
 
 interface SlaCellProps {
   dueAtUtc: string | null;
   slaStatus: SlaStatus;
 }
 
-/** The due date and where the ticket stands against it, as shown in the ticket list. */
+/** Reusable SLA indicator used by both the ticket list and the detail page. */
 export function SlaCell({ dueAtUtc, slaStatus }: SlaCellProps) {
-  const label = labels[slaStatus] ?? { text: humanizeStatus(slaStatus), tone: 'neutral' as BadgeTone };
+  const label = slaStatusLabels[slaStatus];
 
   return (
     <div className="sla-cell">
@@ -24,8 +34,4 @@ export function SlaCell({ dueAtUtc, slaStatus }: SlaCellProps) {
       <span className="sla-cell__due">{formatDateTime(dueAtUtc)}</span>
     </div>
   );
-}
-
-function humanizeStatus(status: SlaStatus): string {
-  return status.replace(/([a-z])([A-Z])/g, '$1 $2');
 }

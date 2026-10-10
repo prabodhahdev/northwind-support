@@ -215,6 +215,45 @@ public sealed class TicketQueriesTests
     }
 
     [Fact]
+    public async Task GetPagedAsync_FiltersBySlaStatusWithinSla()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        var db = database.Db;
+        var now = FixedClock.DefaultNow;
+
+        var customer = new Customer(
+            "Contoso Ltd", "contoso@example.com", null,
+            CustomerTier.Premium, now);
+        var category = new Category("General", false, false);
+
+        db.AddRange(customer, category);
+        await db.SaveChangesAsync();
+
+        var within = Ticket.Raise(
+            "TCK-0041", "Comfortable", "Description",
+            customer.Id, category.Id, TicketPriority.High, now);
+        within.SetSlaWindow(now.AddHours(-1), now.AddHours(3));
+
+        var atRisk = Ticket.Raise(
+            "TCK-0042", "Almost due", "Description",
+            customer.Id, category.Id, TicketPriority.High, now);
+        atRisk.SetSlaWindow(now.AddHours(-7), now.AddHours(1));
+
+        db.AddRange(within, atRisk);
+        await db.SaveChangesAsync();
+
+        var queries = CreateTicketQueries(db);
+
+        var result = await queries.GetPagedAsync(
+            new TicketQuery { SlaStatus = SlaStatus.WithinSla },
+            CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-0041", result.Items[0].Reference);
+        Assert.Equal(SlaStatus.WithinSla, result.Items[0].SlaStatus);
+    }
+
+    [Fact]
     public async Task GetPagedAsync_CombinesSlaStatusWithPriorityFilter()
     {
         await using var database = await TestDatabase.CreateAsync();

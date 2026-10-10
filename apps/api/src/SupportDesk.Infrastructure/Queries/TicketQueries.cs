@@ -227,6 +227,9 @@ public sealed class TicketQueries(
         var now = clock.UtcNow;
         var threshold = _atRiskThresholdPercent;
 
+        if (db.Database.IsSqlServer())
+            return ApplySqlServerSlaStatusFilter(source, slaStatus, now, threshold);
+
         return slaStatus switch
         {
             SlaStatus.NotApplicable => source.Where(
@@ -277,6 +280,76 @@ public sealed class TicketQueries(
             _ => source
         };
     }
+
+    private static IQueryable<TicketWithLabels> ApplySqlServerSlaStatusFilter(
+        IQueryable<TicketWithLabels> source,
+        SlaStatus slaStatus,
+        DateTime now,
+        double threshold)
+    {
+        return slaStatus switch
+        {
+            SlaStatus.AtRisk => source.Where(x =>
+                x.Ticket.DueAtUtc != null &&
+                x.Ticket.ResolvedAtUtc == null &&
+                now <= x.Ticket.DueAtUtc &&
+                x.Ticket.SlaStartedAtUtc != null &&
+                x.Ticket.DueAtUtc > x.Ticket.SlaStartedAtUtc &&
+                (long)EF.Functions.DateDiffMillisecond(
+                    now, x.Ticket.DueAtUtc.Value) * 100
+                    <= threshold * (long)EF.Functions.DateDiffMillisecond(
+                        x.Ticket.SlaStartedAtUtc.Value,
+                        x.Ticket.DueAtUtc.Value)),
+
+            SlaStatus.WithinSla => source.Where(x =>
+                x.Ticket.DueAtUtc != null &&
+                x.Ticket.ResolvedAtUtc == null &&
+                now <= x.Ticket.DueAtUtc &&
+                (
+                    x.Ticket.SlaStartedAtUtc == null ||
+                    (
+                        x.Ticket.DueAtUtc > x.Ticket.SlaStartedAtUtc &&
+                        (long)EF.Functions.DateDiffMillisecond(
+                            now, x.Ticket.DueAtUtc.Value) * 100
+                            > threshold * (long)EF.Functions.DateDiffMillisecond(
+                                x.Ticket.SlaStartedAtUtc.Value,
+                                x.Ticket.DueAtUtc.Value)
+                    )
+                )),
+
+            _ => ApplyCommonSlaStatusFilter(source, slaStatus, now)
+        };
+    }
+
+    private static IQueryable<TicketWithLabels> ApplyCommonSlaStatusFilter(
+        IQueryable<TicketWithLabels> source,
+        SlaStatus slaStatus,
+        DateTime now) =>
+        slaStatus switch
+        {
+            SlaStatus.NotApplicable => source.Where(
+                x => x.Ticket.DueAtUtc == null),
+
+            SlaStatus.Met => source.Where(x =>
+                x.Ticket.DueAtUtc != null &&
+                x.Ticket.ResolvedAtUtc != null &&
+                x.Ticket.ResolvedAtUtc <= x.Ticket.DueAtUtc),
+
+            SlaStatus.Breached => source.Where(x =>
+                x.Ticket.DueAtUtc != null &&
+                (
+                    (x.Ticket.ResolvedAtUtc != null &&
+                     x.Ticket.ResolvedAtUtc > x.Ticket.DueAtUtc) ||
+                    (x.Ticket.ResolvedAtUtc == null &&
+                     now > x.Ticket.DueAtUtc) ||
+                    (x.Ticket.ResolvedAtUtc == null &&
+                     now <= x.Ticket.DueAtUtc &&
+                     x.Ticket.SlaStartedAtUtc != null &&
+                     x.Ticket.DueAtUtc <= x.Ticket.SlaStartedAtUtc)
+                )),
+
+            _ => source
+        };
 
     private static IQueryable<TicketWithLabels> ApplySort(
         IQueryable<TicketWithLabels> source,
