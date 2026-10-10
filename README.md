@@ -113,3 +113,17 @@ and 40 tickets across every status, priority and SLA state.
 **Root cause:** The ticket-list React effect depended on search and pagination fields but omitted the other filter fields. As a result, changing the status or another omitted filter did not trigger a new API request.
 
 **Fix:** Update the effect dependencies so filter changes trigger requests while preserving the debounce for search input.
+
+### Task 1.2 — Server-side ticket filtering
+
+Implemented server-side filtering for ticket searches.
+
+- Added exact-match filters for status, priority, category, customer, and assigned agent.
+- Added support for retrieving unassigned tickets.
+- Added search by ticket title, reference, and customer name, with whitespace trimming and blank-search handling.
+- Combined supplied filters using AND conditions.
+- Applied filtering in the database before counting and pagination to ensure accurate results.
+- Organized filters in a dedicated method to make future filters easier to add.
+
+**Regression tests:** Added tests for exact-match priority filtering, combined filters, and customer-name search.
+
