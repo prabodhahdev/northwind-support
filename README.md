@@ -17,7 +17,7 @@ Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)*
 | 1 | **Fix a defect, add server-side filtering** | Root cause fixed with a regression test; every list filter applied in the database with a correct count | ~2.5 h |
 | 2 | **Ticket escalation & assignment** | Automatic triage on create, escalation with history, SLA status, UI for all of it | ~7 h |
 | 3 | **Login and authentication** | Agents sign in; API rejects unauthenticated calls; login UI | ~4 h |
-| 4 | **Dockerise the API** *(optional)* | `docker compose up` gives a migrated, seeded API with no baked-in secret | ~1.5 h |
+| 4 | **Dockerise the API** | `docker compose up` gives a migrated, seeded API with no baked-in secret | ~1.5 h |
 
 ### Guidance
 
@@ -122,9 +122,18 @@ if local port 1433 is already occupied.
 
 ```bash
 npm test                      # dotnet test, then the web tests (Vitest)
+npm run lint
+npm run typecheck
+npm run build
 ```
 
-Both pass on a clean checkout and neither needs a database.
+- Backend and frontend tests run without a database.
+- Backend tests cover triage rules, SLA boundaries, escalation decisions, authentication outcomes,
+  and ticket filtering via SQLite.
+- Frontend tests cover search debounce, immediate filter requests, SLA labels, escalation
+  validation/server errors, login, token attachment, and 401 handling.
+- Deliberately not covered yet: SQL Server integration for its SLA-specific query translation and
+  API-host integration proving protected-endpoint 401/200 behavior.
 
 ## Commands
 
@@ -166,38 +175,67 @@ and 40 tickets across every status, priority and SLA state.
 | Web app shows "Unable to load tickets" | The API is not running, or `VITE_API_PROXY_TARGET` points at the wrong port |
 | SQL Server slow on Apple Silicon | Enable Rosetta in Docker Desktop → Settings → General |
 
-## Task1 : DEFECT-117: Ticket Filter Requests
+## Task 1 — Defect and filtering
 
-**Root cause:** The ticket-list React effect depended on search and pagination fields but omitted the other filter fields. As a result, changing the status or another omitted filter did not trigger a new API request.
+- **Root cause:** the ticket-list effect omitted dropdown filter fields from its dependencies, so
+  changing a filter did not trigger a request until another dependency changed.
+- **Fix:** the list hook observes every filter; search waits 300 ms after typing, while dropdown
+  changes request immediately. Pending debounce timers are cancelled when superseded or unmounted.
 
-**Fix:** Update the effect dependencies so filter changes trigger requests while preserving the debounce for search input.
+### Server-side filtering
 
-### Task 1.2 — Server-side ticket filtering
+- `TicketQueries.ApplyFilters` composes SQL-translatable exact matches for status, priority,
+  category, customer and assigned agent; unassigned-only; trimmed title/reference/customer-name
+  search; and SLA status. Conditions combine with AND before `CountAsync`, ordering and paging.
+- Tests cover exact priority, combined filters, customer-name search, and immediate filter
+  requests versus debounced search.
+- **SQL verification:** I checked in code that the same filtered query feeds `CountAsync` and
+  then ordering/paging; I did not capture a SQL Server trace. Development EF Core logging is
+  available to inspect generated SQL.
 
-Implemented server-side filtering for ticket searches.
+## Task 2 — Ticket escalation and assignment
 
-- Added exact-match filters for status, priority, category, customer, and assigned agent.
-- Added support for retrieving unassigned tickets.
-- Added search by ticket title, reference, and customer name, with whitespace trimming and blank-search handling.
-- Combined supplied filters using AND conditions.
-- Applied filtering in the database before counting and pagination to ensure accurate results.
-- Organized filters in a dedicated method to make future filters easier to add.
-
-**Regression tests:** Added tests for exact-match priority filtering, combined filters, and customer-name search.
-
-### Task 2 — Ticket escalation and assignment
-
-- Ticket creation applies configured priority, SLA-window and agent-assignment rules and returns
-  the triage reasons. Escalation recomputes the due date, re-evaluates ownership and records an
-  immutable before/after history row.
+- Creation uses the requested priority or defaults to Medium; category flags can force Critical.
+- Configured base SLA windows are Low 72 h, Medium 24 h, High 8 h, Critical 4 h. Premium
+  customers use the configured 0.5 multiplier, with a 1 h floor; at-risk is configured at 25%.
+- Assignment requires an active agent below capacity and, for specialist categories, the matching
+  specialization. Fewest open tickets wins; ties use agent ID. No eligible agent means unassigned
+  with an explanation, not a failed create.
+- Create returns the applied priority, due date, assigned agent or unassigned reason, and triage
+  explanations; the web UI displays that result.
+- Escalation raises priority one step, recalculates due time from escalation time, retains an
+  eligible current assignee or reassigns using the same rule, and records before/after history.
+  Reasons must be 5–500 characters; Critical and Resolved/Closed tickets are rejected.
+- SLA status is derived using an injectable clock and is never stored.
 - `TicketEscalations.TicketId` has an index because ticket history is queried by ticket ID; the
   foreign key cascades when its parent ticket is deleted.
-- SLA status is derived from the ticket dates. The list filter applies the selected state before
-  SQL counting and paging.
-- The web app displays the triage outcome, reusable SLA status indicator, escalation controls
-  and escalation history.
+- The UI uses one SLA indicator in list/detail, supports SLA filtering, and shows escalation
+  controls and history.
 
-### Task 3 — Agent authentication
+## Design decisions
+
+### Alternatives considered
+
+- **Filtering:** Apply predicates in SQL instead of loading tickets and filtering in memory; this
+  keeps counts and pagination correct without transferring the full ticket set.
+- **Credentials:** Store an Identity `PasswordHasher<Agent>` hash on the existing Agent instead
+  of adding a separate Users table or custom/plain-text password storage; each login is an agent.
+- **SLA status:** Derive it from due/start/resolution times and an injectable clock instead of
+  storing a status that could become stale.
+- **Triage:** Reuse the same SLA and assignment rules for create and escalation rather than
+  maintaining separate implementations. Assignment respects active status, specialization,
+  capacity and open-ticket workload; no eligible agent leaves the ticket unassigned with a reason.
+- On escalation, keep the current agent only if they remain active, have the required
+  specialization and have capacity (excluding the ticket being escalated); otherwise assign an
+  eligible agent using the shared triage rule.
+- **Manual reassignment:** After creation, the assignment dropdown disables inactive agents,
+  agents at capacity, and—when the category requires a specialist—agents without that
+  specialization. It shows open/maximum ticket counts to help identify eligible agents.
+- **Token storage:** Use `localStorage` for this assignment so the session survives page reloads.
+  It is accessible to JavaScript, so production should use a more secure session design and
+  stronger XSS defenses.
+
+## Task 3 — Agent authentication
 
 - Agent credentials are stored as a nullable `PasswordHash` column on the existing `Agents`
   table because each login identity belongs to exactly one agent; the credential migration is
@@ -221,6 +259,34 @@ Implemented server-side filtering for ticket searches.
   This survives reloads but is readable by JavaScript, so an XSS flaw could expose the token.
   Keep the app free of untrusted scripts and use HTTPS outside local development.
 
-**Known limitations:** There are no refresh tokens or automatic token renewal, roles or
-permissions, account lockout, or rate limiting. Agents sign in again after the 60-minute token
-expires; any API 401 clears the local session and sends them to sign in again.
+## Task 4 — Docker
+
+- Added a multi-stage .NET 10 API image with cached restore, running as non-root on port 8080.
+- Compose waits for healthy SQL Server, passes configuration at runtime, and exposes the
+  migrated, seeded API on `localhost:5080`. `/health` is database-aware and anonymous.
+- The web proxy can target the container with `VITE_API_PROXY_TARGET`.
+- Build, run, migration strategy and verification details are in
+  [Run the API with Docker](#run-the-api-with-docker).
+
+## AI usage
+
+- **Tool and purpose:** Copilot in VS Code assisted with implementation, test writing, debugging
+  and documentation review. I reviewed the affected code and ran automated checks.
+- **Workflow that worked:** inspect the implementation and tests first, request a bounded change
+  with a regression test, then run the narrow relevant test suite.
+- **Accepted after review:** the shared triage service, after confirming both create and escalation
+  use it for the same SLA and assignment decisions.
+- **Adjusted after review:** AI-assisted investigation found that a very large page could overflow
+  the integer offset passed to `Skip`. I kept the fix local to page normalization instead of
+  changing the query pipeline, and added a regression test for the largest safe offset.
+- **Verification:** backend/frontend tests, builds, lint and type checks; Docker checks are
+  described above.
+
+## Known limitations
+
+- No refresh tokens, roles/permissions, account lockout or rate limiting. A 60-minute token
+  expiry requires signing in again; any API 401 clears the browser session.
+- Agent selection currently counts open tickets per candidate agent; this can be consolidated if
+  the agent pool grows.
+- The SQL Server-specific SLA filter and central authorization need API/SQL Server integration
+  coverage. The optional SLA summary report is not built.

@@ -39,9 +39,15 @@ public sealed record TicketQuery
     public string SortDirection { get; init; } = "desc";
 
     /// <summary>Page and page size clamped to something a database can serve.</summary>
-    public TicketQuery Normalized() => this with
+    public TicketQuery Normalized()
     {
-        Page = Page < 1 ? 1 : Page,
-        PageSize = PageSize < 1 ? 20 : Math.Min(PageSize, MaxPageSize)
-    };
+        var pageSize = PageSize < 1 ? 20 : Math.Min(PageSize, MaxPageSize);
+        var maxPage = int.MaxValue / pageSize + 1;
+
+        return this with
+        {
+            Page = Math.Clamp(Page, 1, maxPage),
+            PageSize = pageSize
+        };
+    }
 }
